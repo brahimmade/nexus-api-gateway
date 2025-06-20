@@ -100,23 +100,23 @@ jobs:
     
     - name: Validate MongoDB initialization script
       run: |
-        if [ -f "backend/database/init-mongo.js" ]; then
+        if [ -f "backend/init-mongo.js" ]; then
           echo "MongoDB initialization script found"
           # Basic syntax check for JavaScript
-          node -c backend/database/init-mongo.js || echo "Warning: JavaScript syntax check failed, but this might be due to MongoDB-specific syntax"
+          node -c backend/init-mongo.js || echo "Warning: JavaScript syntax check failed, but this might be due to MongoDB-specific syntax"
           
           # Check for required collections
-          grep -q "createCollection('users'" backend/database/init-mongo.js && echo "✓ Users collection creation found"
-          grep -q "createCollection('audit_logs'" backend/database/init-mongo.js && echo "✓ Audit logs collection creation found"
-          grep -q "createCollection('sessions'" backend/database/init-mongo.js && echo "✓ Sessions collection creation found"
-          grep -q "createCollection('api_keys'" backend/database/init-mongo.js && echo "✓ API keys collection creation found"
+          grep -q "createCollection('users'" backend/init-mongo.js && echo "✓ Users collection creation found"
+          grep -q "createCollection('audit_logs'" backend/init-mongo.js && echo "✓ Audit logs collection creation found"
+          grep -q "createCollection('sessions'" backend/init-mongo.js && echo "✓ Sessions collection creation found"
+          grep -q "createCollection('api_keys'" backend/init-mongo.js && echo "✓ API keys collection creation found"
           
           # Check for indexes
-          grep -q "createIndex" backend/database/init-mongo.js && echo "✓ Database indexes found"
+          grep -q "createIndex" backend/init-mongo.js && echo "✓ Database indexes found"
           
           # Check for default users
-          grep -q "admin@nexus.local" backend/database/init-mongo.js && echo "✓ Default admin user found"
-          grep -q "user@nexus.local" backend/database/init-mongo.js && echo "✓ Default regular user found"
+          grep -q "admin@nexus.local" backend/init-mongo.js && echo "✓ Default admin user found"
+          grep -q "user@nexus.local" backend/init-mongo.js && echo "✓ Default regular user found"
           
           echo "Database configuration validation completed"
         else
