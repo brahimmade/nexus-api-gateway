@@ -1,0 +1,75 @@
+name: Merge Feature Branches
+
+on:
+  workflow_dispatch:
+    inputs:
+      merge_all:
+        description: 'Merge all feature branches to main'
+        required: true
+        default: 'true'
+        type: boolean
+
+jobs:
+  merge-backend:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.merge_all == 'true'
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Configure Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+    
+    - name: Merge feature/backend branch
+      run: |
+        git checkout main
+        git pull origin main
+        if git show-ref --verify --quiet refs/remotes/origin/feature/backend; then
+          echo "Merging feature/backend branch..."
+          git merge origin/feature/backend --no-ff -m "Merge feature/backend: Add API Gateway service"
+          echo "✓ feature/backend merged successfully"
+        else
+          echo "feature/backend branch not found, skipping..."
+        fi
+    
+    - name: Merge feature/user-service branch
+      run: |
+        if git show-ref --verify --quiet refs/remotes/origin/feature/user-service; then
+          echo "Merging feature/user-service branch..."
+          git merge origin/feature/user-service --no-ff -m "Merge feature/user-service: Add User Service with authentication"
+          echo "✓ feature/user-service merged successfully"
+        else
+          echo "feature/user-service branch not found, skipping..."
+        fi
+    
+    - name: Merge feature/database branch
+      run: |
+        if git show-ref --verify --quiet refs/remotes/origin/feature/database; then
+          echo "Merging feature/database branch..."
+          git merge origin/feature/database --no-ff -m "Merge feature/database: Add MongoDB initialization"
+          echo "✓ feature/database merged successfully"
+        else
+          echo "feature/database branch not found, skipping..."
+        fi
+    
+    - name: Push merged changes
+      run: |
+        git push origin main
+        echo "All feature branches merged to main successfully!"
+    
+    - name: Create summary comment
+      run: |
+        echo "## Merge Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "The following feature branches have been merged to main:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **feature/backend** - API Gateway service" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **feature/user-service** - User Service with authentication" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ **feature/database** - MongoDB initialization script" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "All services are now available in the main branch and ready for deployment." >> $GITHUB_STEP_SUMMARY

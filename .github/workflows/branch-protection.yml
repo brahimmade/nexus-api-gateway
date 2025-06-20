@@ -1,0 +1,122 @@
+name: Branch Protection and Quality Gates
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install quality tools
+      run: |
+        pip install flake8 black isort safety bandit
+    
+    - name: Check code formatting (Black)
+      run: |
+        find backend -name "*.py" -exec black --check --diff {} + || {
+          echo "❌ Code formatting issues found. Run 'black .' to fix."
+          exit 1
+        }
+        echo "✅ Code formatting is correct"
+    
+    - name: Check import sorting (isort)
+      run: |
+        find backend -name "*.py" -exec isort --check-only --diff {} + || {
+          echo "❌ Import sorting issues found. Run 'isort .' to fix."
+          exit 1
+        }
+        echo "✅ Import sorting is correct"
+    
+    - name: Lint code (flake8)
+      run: |
+        find backend -name "*.py" -exec flake8 {} + || {
+          echo "❌ Linting issues found. Please fix the issues above."
+          exit 1
+        }
+        echo "✅ Code linting passed"
+    
+    - name: Security check (bandit)
+      run: |
+        find backend -name "*.py" -exec bandit -r {} + || {
+          echo "⚠️ Security issues found. Please review and fix."
+          # Don't fail the build for security warnings, just notify
+        }
+        echo "✅ Security check completed"
+    
+    - name: Dependency security check (safety)
+      run: |
+        for req_file in $(find backend -name "requirements.txt"); do
+          echo "Checking $req_file..."
+          safety check -r "$req_file" || {
+            echo "⚠️ Security vulnerabilities found in $req_file"
+            # Don't fail the build for dependency vulnerabilities, just notify
+          }
+        done
+        echo "✅ Dependency security check completed"
+    
+    - name: Validate project structure
+      run: |
+        echo "Validating project structure..."
+        
+        # Check required files exist
+        required_files=(
+          "backend/api-gateway/main.py"
+          "backend/api-gateway/requirements.txt"
+          "backend/api-gateway/Dockerfile"
+          "backend/user-service/main.py"
+          "backend/user-service/requirements.txt"
+          "backend/user-service/Dockerfile"
+        )
+        
+        for file in "${required_files[@]}"; do
+          if [ -f "$file" ]; then
+            echo "✅ $file exists"
+          else
+            echo "❌ $file is missing"
+            exit 1
+          fi
+        done
+        
+        echo "✅ Project structure validation passed"
+    
+    - name: Test imports and basic functionality
+      run: |
+        echo "Testing API Gateway..."
+        cd backend/api-gateway
+        python -c "import main; print('✅ API Gateway imports successful')"
+        
+        echo "Testing User Service..."
+        cd ../user-service
+        # Set dummy environment variables to avoid connection errors
+        export MONGODB_URL="mongodb://localhost:27017/test"
+        export KAFKA_BOOTSTRAP_SERVERS="localhost:9092"
+        python -c "import main; print('✅ User Service imports successful')"
+        
+        echo "✅ All import tests passed"
+    
+    - name: Generate quality report
+      run: |
+        echo "## Quality Gate Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ✅ Checks Passed" >> $GITHUB_STEP_SUMMARY
+        echo "- Code formatting (Black)" >> $GITHUB_STEP_SUMMARY
+        echo "- Import sorting (isort)" >> $GITHUB_STEP_SUMMARY
+        echo "- Code linting (flake8)" >> $GITHUB_STEP_SUMMARY
+        echo "- Project structure validation" >> $GITHUB_STEP_SUMMARY
+        echo "- Import and functionality tests" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔍 Security Checks" >> $GITHUB_STEP_SUMMARY
+        echo "- Security linting (bandit) - Completed" >> $GITHUB_STEP_SUMMARY
+        echo "- Dependency vulnerability scan (safety) - Completed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "✅ **All quality gates passed! This PR is ready for review.**" >> $GITHUB_STEP_SUMMARY

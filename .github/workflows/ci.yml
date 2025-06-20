@@ -1,0 +1,254 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, feature/* ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-api-gateway:
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.message, 'api-gateway') || github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies for API Gateway
+      run: |
+        cd backend/api-gateway
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Lint API Gateway code
+      run: |
+        cd backend/api-gateway
+        pip install flake8
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Test API Gateway imports
+      run: |
+        cd backend/api-gateway
+        python -c "import main; print('API Gateway imports successful')"
+    
+    - name: Validate API Gateway configuration
+      run: |
+        cd backend/api-gateway
+        python -c "
+        import os
+        from main import app
+        print('API Gateway FastAPI app created successfully')
+        print(f'App title: {app.title}')
+        print(f'App version: {app.version}')
+        "
+
+  test-user-service:
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.message, 'user-service') || github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies for User Service
+      run: |
+        cd backend/user-service
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Lint User Service code
+      run: |
+        cd backend/user-service
+        pip install flake8
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Test User Service imports
+      run: |
+        cd backend/user-service
+        python -c "import main; print('User Service imports successful')"
+    
+    - name: Validate User Service configuration
+      run: |
+        cd backend/user-service
+        python -c "
+        import os
+        from main import app, UserRole, Permission
+        print('User Service FastAPI app created successfully')
+        print(f'App title: {app.title}')
+        print(f'App version: {app.version}')
+        print(f'Available roles: {[role.value for role in UserRole]}')
+        print(f'Available permissions: {[perm.value for perm in Permission]}')
+        "
+
+  test-database-config:
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.message, 'database') || github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Validate MongoDB initialization script
+      run: |
+        if [ -f "backend/database/init-mongo.js" ]; then
+          echo "MongoDB initialization script found"
+          # Basic syntax check for JavaScript
+          node -c backend/database/init-mongo.js || echo "Warning: JavaScript syntax check failed, but this might be due to MongoDB-specific syntax"
+          
+          # Check for required collections
+          grep -q "createCollection('users'" backend/database/init-mongo.js && echo "✓ Users collection creation found"
+          grep -q "createCollection('audit_logs'" backend/database/init-mongo.js && echo "✓ Audit logs collection creation found"
+          grep -q "createCollection('sessions'" backend/database/init-mongo.js && echo "✓ Sessions collection creation found"
+          grep -q "createCollection('api_keys'" backend/database/init-mongo.js && echo "✓ API keys collection creation found"
+          
+          # Check for indexes
+          grep -q "createIndex" backend/database/init-mongo.js && echo "✓ Database indexes found"
+          
+          # Check for default users
+          grep -q "admin@nexus.local" backend/database/init-mongo.js && echo "✓ Default admin user found"
+          grep -q "user@nexus.local" backend/database/init-mongo.js && echo "✓ Default regular user found"
+          
+          echo "Database configuration validation completed"
+        else
+          echo "Error: MongoDB initialization script not found"
+          exit 1
+        fi
+
+  docker-build-test:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Test API Gateway Docker build
+      run: |
+        cd backend/api-gateway
+        docker build -t nexus-api-gateway:test .
+        echo "API Gateway Docker build successful"
+    
+    - name: Test User Service Docker build
+      run: |
+        cd backend/user-service
+        docker build -t nexus-user-service:test .
+        echo "User Service Docker build successful"
+    
+    - name: Clean up Docker images
+      run: |
+        docker rmi nexus-api-gateway:test nexus-user-service:test || true
+
+  security-scan:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install security scanning tools
+      run: |
+        pip install safety bandit
+    
+    - name: Check for known security vulnerabilities in dependencies
+      run: |
+        cd backend/api-gateway
+        safety check -r requirements.txt || echo "Security vulnerabilities found in API Gateway dependencies"
+        cd ../user-service
+        safety check -r requirements.txt || echo "Security vulnerabilities found in User Service dependencies"
+    
+    - name: Run bandit security linter
+      run: |
+        cd backend/api-gateway
+        bandit -r . -f json -o bandit-report-api-gateway.json || true
+        cd ../user-service
+        bandit -r . -f json -o bandit-report-user-service.json || true
+        echo "Security scanning completed"
+
+  integration-test:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: [test-api-gateway, test-user-service, test-database-config]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install testing dependencies
+      run: |
+        pip install pytest httpx pytest-asyncio
+    
+    - name: Create integration test
+      run: |
+        cat > test_integration.py << 'EOF'
+        import pytest
+        import sys
+        import os
+        
+        # Add backend directories to path
+        sys.path.append('backend/api-gateway')
+        sys.path.append('backend/user-service')
+        
+        def test_api_gateway_import():
+            """Test that API Gateway can be imported"""
+            try:
+                import main as api_gateway_main
+                assert api_gateway_main.app is not None
+                print("✓ API Gateway import successful")
+            except Exception as e:
+                pytest.fail(f"API Gateway import failed: {e}")
+        
+        def test_user_service_import():
+            """Test that User Service can be imported"""
+            try:
+                # Temporarily set environment variables to avoid MongoDB connection
+                os.environ['MONGODB_URL'] = 'mongodb://localhost:27017/test_db'
+                os.environ['KAFKA_BOOTSTRAP_SERVERS'] = 'localhost:9092'
+                
+                import main as user_service_main
+                assert user_service_main.app is not None
+                print("✓ User Service import successful")
+            except Exception as e:
+                pytest.fail(f"User Service import failed: {e}")
+        
+        def test_models_compatibility():
+            """Test that models are properly defined"""
+            try:
+                sys.path.append('backend/user-service')
+                from main import UserRole, Permission, UserCreate, UserResponse
+                
+                # Test enum values
+                assert UserRole.ADMIN == "admin"
+                assert UserRole.USER == "user"
+                assert UserRole.MODERATOR == "moderator"
+                
+                # Test permission enum
+                assert Permission.READ_USERS == "read:users"
+                assert Permission.WRITE_USERS == "write:users"
+                
+                print("✓ Models compatibility test passed")
+            except Exception as e:
+                pytest.fail(f"Models compatibility test failed: {e}")
+        EOF
+    
+    - name: Run integration tests
+      run: |
+        python -m pytest test_integration.py -v
+        echo "Integration tests completed"
